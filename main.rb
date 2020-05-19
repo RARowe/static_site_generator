@@ -1,9 +1,9 @@
 module SGHelpers
-  def build_path(parent, path)
+  def build_path(parent, name)
     if parent
-      "#{parent.path}/#{path}"
+      "#{parent.path}/#{name}"
     else
-      "#{path}"
+      "#{name}"
     end
   end
 end
@@ -40,14 +40,15 @@ end
 
 class SGFile
   include SGHelpers
-  def initialize(parent, path)
+  attr_accessor :name
+  def initialize(parent, name)
     @parent = parent
-    @path = path
+    @name = name
     process
   end
 
   def path
-    build_path @parent, @path
+    build_path @parent, @name
   end
 
   def process
@@ -81,8 +82,9 @@ end
 
 class SGDir
   include SGHelpers
-  def initialize(path, parent = nil)
-    @path = path
+  attr_accessor :name
+  def initialize(name, parent = nil)
+    @name = name
     @parent = parent
     @directories = []
     @files = []
@@ -103,12 +105,12 @@ class SGDir
   end
 
   def path
-    build_path @parent, @path
+    build_path @parent, @name
   end
 
   private
   def bad_dir? d
-    d == '.' or d == '..'
+    d == '.' or d == '..' or d.start_with? '.'
   end
 
   def bad_file? f
