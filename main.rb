@@ -9,7 +9,7 @@ end
 
 def process_image path
   copy_to_dest path
-  system "sips -s format jpeg -Z 320 #{path} --out #{$OUTPUT_DIR}/#{path.basename '.*'}_320.jpg"
+  system "sips -s format jpeg -Z 320 #{path} --out #{path.dirname.sub($INPUT_DIR, $OUTPUT_DIR)}/#{path.basename '.*'}_320.jpg"
 end
 
 def process_md path
