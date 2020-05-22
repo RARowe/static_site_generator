@@ -47,11 +47,25 @@ def handle_file path
   end
 end
 
-$INPUT_DIR = ARGV[0]
-$OUTPUT_DIR = ARGV[1]
+$TEMPLATE_DIR = ARGV[0]
+$INPUT_DIR = ARGV[1]
+$OUTPUT_DIR = ARGV[2]
 
 directory_paths = []
 files = {} 
+templates = {}
+
+Find.find($TEMPLATE_DIR) do |f|
+  puts 'doing'
+  f = Pathname.new f
+  puts "#{f.file?} #{f.extname}"
+  if f.file? and f.extname == '.html'
+    puts 'done'
+    templates[f.basename.sub_ext ''] = f.read
+  end
+end
+puts templates
+
 
 Find.find($INPUT_DIR) do |f|
   output_path = f.sub($INPUT_DIR, $OUTPUT_DIR)
