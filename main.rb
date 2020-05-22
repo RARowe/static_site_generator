@@ -3,6 +3,16 @@ require 'find'
 require 'fileutils'
 require 'pathname'
 
+class Kramdown::Converter::Html
+  def convert_img el, _indent
+    src = el.attr["src"]
+    link_attributes = { "href" => src }
+    el.attr["src"] = src.sub ".png", "_320.jpg"
+    el.attr["title"] = el.attr["alt"]
+    "<a #{html_attributes(link_attributes)}><img#{html_attributes(el.attr)} /></a>"
+  end
+end
+
 def copy_to_dest path
   FileUtils.cp path, path.sub($INPUT_DIR, $OUTPUT_DIR)
 end
@@ -16,6 +26,10 @@ def process_md path
   File.write path.sub($INPUT_DIR, $OUTPUT_DIR).sub_ext('.html'), Kramdown::Document.new(path.read).to_html
 end
 
+def process_partial_html path
+  puts 'processing partial html code goes here'
+end
+
 def process_file path
   copy_to_dest path
 end
@@ -26,6 +40,8 @@ def handle_file path
     process_image path
   when /md/
     process_md path
+  when /partial\.html/
+    process_partial_html path
   else
     process_file path
   end
