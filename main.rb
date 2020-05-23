@@ -31,7 +31,7 @@ def process_md path
 end
 
 def process_partial_html path
-  puts 'processing partial html code goes here'
+  File.write path.sub($INPUT_DIR, $OUTPUT_DIR).sub_ext('.html'), merge_template('post', path.read)
 end
 
 def process_file path
@@ -44,7 +44,7 @@ def handle_file path
     process_image path
   when /md/
     process_md path
-  when /partial\.html/
+  when /phtml/
     process_partial_html path
   else
     process_file path
@@ -65,7 +65,6 @@ Find.find($TEMPLATE_DIR) do |f|
     $TEMPLATES[(f.basename.sub_ext '').to_s] = f.read
   end
 end
-puts $TEMPLATES
 
 Find.find($INPUT_DIR) do |f|
   output_path = f.sub($INPUT_DIR, $OUTPUT_DIR)
