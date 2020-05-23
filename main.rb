@@ -37,10 +37,18 @@ class SGDir
 
   def write
     FileUtils.mkdir_p @output_path
+    write_files
+  end
+
+  protected
+  def write_files
     @files.each do |f|
       f.write
     end
   end
+end
+
+class IndexDir < SGDir
 end
 
 class SGFile
