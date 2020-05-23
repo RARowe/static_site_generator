@@ -13,6 +13,10 @@ class Kramdown::Converter::Html
   end
 end
 
+def merge_template type, content
+  $TEMPLATES[type].sub '<##BODY##>', content
+end
+
 def copy_to_dest path
   FileUtils.cp path, path.sub($INPUT_DIR, $OUTPUT_DIR)
 end
@@ -23,7 +27,7 @@ def process_image path
 end
 
 def process_md path
-  File.write path.sub($INPUT_DIR, $OUTPUT_DIR).sub_ext('.html'), Kramdown::Document.new(path.read).to_html
+  File.write path.sub($INPUT_DIR, $OUTPUT_DIR).sub_ext('.html'), merge_template('post', Kramdown::Document.new(path.read).to_html)
 end
 
 def process_partial_html path
@@ -47,25 +51,21 @@ def handle_file path
   end
 end
 
-$TEMPLATE_DIR = ARGV[0]
-$INPUT_DIR = ARGV[1]
-$OUTPUT_DIR = ARGV[2]
+$TEMPLATE_DIR = 'templates'# ARGV[0]
+$INPUT_DIR = 'test'# ARGV[1]
+$OUTPUT_DIR = 'www'# ARGV[2]
 
 directory_paths = []
 files = {} 
-templates = {}
+$TEMPLATES = {}
 
 Find.find($TEMPLATE_DIR) do |f|
-  puts 'doing'
   f = Pathname.new f
-  puts "#{f.file?} #{f.extname}"
   if f.file? and f.extname == '.html'
-    puts 'done'
-    templates[f.basename.sub_ext ''] = f.read
+    $TEMPLATES[(f.basename.sub_ext '').to_s] = f.read
   end
 end
-puts templates
-
+puts $TEMPLATES
 
 Find.find($INPUT_DIR) do |f|
   output_path = f.sub($INPUT_DIR, $OUTPUT_DIR)
