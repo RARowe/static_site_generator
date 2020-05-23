@@ -13,8 +13,35 @@ class Kramdown::Converter::Html
   end
 end
 
+def get_title path
+  case path.extname
+  when /jpg|jpeg|png/
+    ''
+  when /md/
+    path
+      .readlines
+      .map(&:chomp)
+      .find { |l| l.match /#\s/ }
+      .sub '# ', ''
+  when /phtml|html/
+    path
+      .readlines
+      .map(&:chomp)
+      .find { |l| l.match /h1/ }
+      .sub('<h1>', '')
+      .sub('</h1>', '')
+  else
+    process_file path
+  end
+end
+
+
 def merge_template type, content
   $TEMPLATES[type].sub '<##BODY##>', content
+end
+
+def write_as_html_file path, contents
+  File.write path.sub($INPUT_DIR, $OUTPUT_DIR).sub_ext('.html'), contents
 end
 
 def copy_to_dest path
@@ -27,11 +54,11 @@ def process_image path
 end
 
 def process_md path
-  File.write path.sub($INPUT_DIR, $OUTPUT_DIR).sub_ext('.html'), merge_template('post', Kramdown::Document.new(path.read).to_html)
+  write_as_html_file path, merge_template('post', Kramdown::Document.new(path.read).to_html)
 end
 
 def process_partial_html path
-  File.write path.sub($INPUT_DIR, $OUTPUT_DIR).sub_ext('.html'), merge_template('post', path.read)
+  write_as_html_file path, merge_template('post', path.read)
 end
 
 def process_file path
@@ -80,7 +107,10 @@ Find.find($INPUT_DIR) do |f|
 end
 
 files.each do |k, v|
+  titles = []
   v.each do |f|
     handle_file f
+    titles.push get_title f
   end
+  puts titles
 end
