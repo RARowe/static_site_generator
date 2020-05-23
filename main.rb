@@ -13,29 +13,6 @@ class Kramdown::Converter::Html
   end
 end
 
-def get_title path
-  case path.extname
-  when /jpg|jpeg|png/
-    ''
-  when /md/
-    path
-      .readlines
-      .map(&:chomp)
-      .find { |l| l.match /#\s/ }
-      .sub '# ', ''
-  when /phtml|html/
-    path
-      .readlines
-      .map(&:chomp)
-      .find { |l| l.match /h1/ }
-      .sub('<h1>', '')
-      .sub('</h1>', '')
-  else
-    process_file path
-  end
-end
-
-
 def merge_template type, content
   $TEMPLATES[type].sub '<##BODY##>', content
 end
@@ -48,33 +25,87 @@ def copy_to_dest path
   FileUtils.cp path, path.sub($INPUT_DIR, $OUTPUT_DIR)
 end
 
-def process_image path
-  copy_to_dest path
-  system "sips -s format jpeg -Z 320 #{path} --out #{path.dirname.sub($INPUT_DIR, $OUTPUT_DIR)}/#{path.basename '.*'}_320.jpg"
+class SGDir
+  def initialize path
+    @output_path = path.sub $INPUT_DIR, $OUTPUT_DIR
+    @files = []
+  end
+
+  def add_file f
+    @files.push f
+  end
+
+  def write
+    FileUtils.mkdir_p @output_path
+    @files.each do |f|
+      f.write
+    end
+  end
 end
 
-def process_md path
-  write_as_html_file path, merge_template('post', Kramdown::Document.new(path.read).to_html)
+class SGFile
+  attr_accessor :path
+  def initialize path
+    @path = Pathname.new path
+  end
 end
 
-def process_partial_html path
-  write_as_html_file path, merge_template('post', path.read)
+class ImageFile < SGFile
+  def write
+    copy_to_dest path
+    system "sips -s format jpeg -Z 320 #{path} --out #{path.dirname.sub($INPUT_DIR, $OUTPUT_DIR)}/#{path.basename '.*'}_320.jpg"
+  end
+
+  def title
+    ''
+  end
 end
 
-def process_file path
-  copy_to_dest path
+class MarkdownFile < SGFile
+  def write
+    write_as_html_file path, merge_template('post', Kramdown::Document.new(path.read).to_html)
+  end
+
+  def title
+    path
+      .readlines
+      .map(&:chomp)
+      .find { |l| l.match /#\s/ }
+      .sub '# ', ''
+  end
 end
 
-def handle_file path
-  case path.extname
+class HtmlFile < SGFile
+  def write
+    copy_to_dest path
+  end
+
+  def title
+    path
+      .readlines
+      .map(&:chomp)
+      .find { |l| l.match /h1/ }
+      .sub('<h1>', '')
+      .sub('</h1>', '')
+  end
+end
+
+class PartialHtmlFile < HtmlFile
+  def write
+    write_as_html_file path, merge_template('post', path.read)
+  end
+end
+
+def build_file path
+  case File.extname path
   when /jpg|jpeg|png/
-    process_image path
+    ImageFile.new path
   when /md/
-    process_md path
+    MarkdownFile.new path
   when /phtml/
-    process_partial_html path
+    PartialHtmlFile.new path
   else
-    process_file path
+    HtmlFile.new path
   end
 end
 
@@ -82,8 +113,6 @@ $TEMPLATE_DIR = 'templates'# ARGV[0]
 $INPUT_DIR = 'test'# ARGV[1]
 $OUTPUT_DIR = 'www'# ARGV[2]
 
-directory_paths = []
-files = {} 
 $TEMPLATES = {}
 
 Find.find($TEMPLATE_DIR) do |f|
@@ -93,24 +122,19 @@ Find.find($TEMPLATE_DIR) do |f|
   end
 end
 
+directories = {}
+files = []
 Find.find($INPUT_DIR) do |f|
-  output_path = f.sub($INPUT_DIR, $OUTPUT_DIR)
   if File.directory? f
-    FileUtils.mkdir_p output_path
+    directories[f] = SGDir.new f
   else
-    base_path = Pathname.new(output_path).dirname.to_s
-    if !files[base_path]
-      files[base_path] = []
-    end
-    files[base_path].push(Pathname.new(f))
+    files.push f
   end
 end
+puts directories
 
-files.each do |k, v|
-  titles = []
-  v.each do |f|
-    handle_file f
-    titles.push get_title f
-  end
-  puts titles
+files.each { |f| directories[File.dirname(f)].add_file(build_file f) }
+
+directories.each do |k, v|
+  v.write
 end
