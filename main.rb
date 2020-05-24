@@ -18,15 +18,20 @@ def merge_post_template title, body
 end
 
 def merge_index_template title, body, posts
-  ERB.new(File.read('templates/post.html.erb')).result_with_hash({ title: title, body: body, posts: posts })
-end
-
-def write_as_html_file path, contents
-  File.write path.sub($INPUT_DIR, $OUTPUT_DIR).sub_ext('.html'), contents
+  ERB.new(File.read('templates/index.html.erb')).result_with_hash({ id: title.split.join('-'), title: title, body: body, posts: posts })
 end
 
 def copy_to_dest path
   FileUtils.cp path, path.sub($INPUT_DIR, $OUTPUT_DIR)
+end
+
+def get_title_from_html content
+  content
+    .lines
+    .map(&:chomp)
+    .find { |l| l.match /h1/ }
+    .sub(/<h1[^>]*>/, '')
+    .sub(/<\/h1>/, '')
 end
 
 class NullObject
@@ -88,11 +93,15 @@ class IndexFile
   end
 
   def write
-    File.write @output_path, merge_index_template(@dir.title, body, @dir.posts)
+    File.write @output_path, merge_index_template(title, body, @dir.posts)
   end
 
   def body
     ''
+  end
+
+  def title
+    @dir.title
   end
 end
 
@@ -102,7 +111,11 @@ class IndexMarkdownFile < IndexFile
   end
 
   def body
-    Kramdown::Document.new(File.read path).to_html
+    Kramdown::Document.new(File.read @path).to_html
+  end
+
+  def title
+    get_title_from_html body
   end
 end
 
@@ -114,6 +127,10 @@ class IndexPartialHtmlFile < IndexFile
   def body
     File.read @path
   end
+
+  def title
+    get_title_from_html body
+  end
 end
 
 class SGDir
@@ -121,7 +138,7 @@ class SGDir
   def initialize path
     @path = path
     @output_path = path.sub $INPUT_DIR, $OUTPUT_DIR
-    @image_dir = build_image_dir path
+    @image_dir = build_image_dir "#{path}/images"
     @index_file = build_index_file self
     @posts = get_posts path
     @title = File.basename(path).gsub('_', ' ').split.map(&:capitalize).join ' '
@@ -131,6 +148,9 @@ class SGDir
 
   def write
     FileUtils.mkdir_p @output_path
+    if File.exist? "#{@path}/styles.css"
+      FileUtils.cp "#{@path}/styles.css", "#{@output_path}/styles.css"
+    end
     @image_dir.write
     @index_file.write
     @posts.each do |e|
@@ -142,8 +162,12 @@ class SGDir
   def get_posts path
     Dir
       .entries(path)
-      .filter { |e| !e.start_with?('.') and !e.include?('index.') }
+      .filter { |e| is_entry e }
       .map { |e| build_entry "#{path}/#{e}" }
+  end
+
+  def is_entry e
+    !e.start_with?('.') and !e.include?('index.') and e != 'images' and File.extname(e) != '.css'
   end
 end
 
@@ -166,24 +190,23 @@ class ImageDir
     end
 
     @files.each do |f|
-      out_path = File.dirname f.sub($INPUT_DIR, $OUTPUT_DIR)
+      output_path = File.dirname f.sub($INPUT_DIR, $OUTPUT_DIR)
       file_name = File.basename f, '.*'
       copy_to_dest f
-      system "sips -s format jpeg -Z 320 #{f} --out #{out_path}/#{file_name}_320.jpg"
+      system "sips -s format jpeg -Z 320 #{f} --out #{output_path}/#{file_name}_320.jpg"
     end
   end
 end
 
 class SGFile
-  attr_accessor :path, :out_path, :link
+  attr_accessor :path, :output_path
   def initialize path
-    @path = Pathname.new path
-    @out_path = @path.dirname.sub($INPUT_DIR, $OUTPUT_DIR)
-    @link = File.basename path
+    @path = path
+    @output_path = path.sub($INPUT_DIR, $OUTPUT_DIR)
   end
 
   def basename
-    @out_path.basename
+    @output_path.basename
   end
 
   def id
@@ -193,16 +216,24 @@ class SGFile
   def title
     ''
   end
+
+  def link
+    File.basename @output_path
+  end
 end
 
 class MarkdownFile < SGFile
+  def initialize path
+    super
+    @output_path.sub!(/\.md$/, '.html')
+  end
+
   def write
-    write_as_html_file path, merge_post_template(title, Kramdown::Document.new(path.read).to_html)
+    File.write @output_path, merge_post_template(title, Kramdown::Document.new(File.read(path)).to_html)
   end
 
   def title
-    path
-      .readlines
+    File.readlines(path)
       .map(&:chomp)
       .find { |l| l.match /#\s/ }
       .sub '# ', ''
@@ -215,17 +246,18 @@ class HtmlFile < SGFile
   end
 
   def title
-    File.readlines(path.to_s)
-      .map(&:chomp)
-      .find { |l| l.match /h1/ }
-      .sub('<h1>', '')
-      .sub('</h1>', '')
+    get_title_from_html File.read(path)
   end
 end
 
 class PartialHtmlFile < HtmlFile
+  def initialize path
+    super
+    @output_path.sub!(/\.phtml$/, '.html')
+  end
+
   def write
-    write_as_html_file path, merge_post_template(title, path.read)
+    File.write @output_path, merge_post_template(title, File.read(path))
   end
 end
 
@@ -258,17 +290,3 @@ $INPUT_DIR = 'test'# ARGV[1]
 $OUTPUT_DIR = 'www'# ARGV[2]
 
 SGDir.new('test').write
-#directories = {}
-#files = []
-#Find.find($INPUT_DIR) do |f|
-#  if File.directory? f
-#    directories[f] = SGDir.new f
-#  end
-#  files.push f
-#end
-#
-#files.each { |f| directories[File.dirname(f)].add_file(build_entry f) }
-#
-#directories.each do |k, v|
-#  v.write
-#end
