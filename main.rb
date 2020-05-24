@@ -13,8 +13,12 @@ class Kramdown::Converter::Html
   end
 end
 
-def merge_template type, content
-  $TEMPLATES[type].sub '<##BODY##>', content
+def merge_post_template title, body
+  ERB.new(File.read('templates/post.html.erb')).result_with_hash({ title: title, body: body })
+end
+
+def merge_index_template title, body, posts
+  ERB.new(File.read('templates/post.html.erb')).result_with_hash({ title: title, body: body, posts: posts })
 end
 
 def write_as_html_file path, contents
@@ -25,43 +29,165 @@ def copy_to_dest path
   FileUtils.cp path, path.sub($INPUT_DIR, $OUTPUT_DIR)
 end
 
-class SGDir
-  def initialize path
-    @output_path = path.sub $INPUT_DIR, $OUTPUT_DIR
-    @files = []
+class NullObject
+  def method_missing(*args, &block)
+    nil
   end
+end
 
-  def add_file f
-    @files.push f
+def build_image_dir path
+  if File.exist? path
+    ImageDir.new path
+  else
+    NullObject.new
   end
+end
 
-  def write
-    FileUtils.mkdir_p @output_path
-    write_files
+def build_index_file dir
+  if File.exist? "#{dir.path}/index.md"
+    IndexMarkdownFile.new dir
+  elsif File.exist? "#{dir.path}/index.phtml"
+    IndexPartialHtmlFile.new dir
+  elsif File.exist? "#{dir.path}/index.html"
+    HtmlFile.new "#{dir.path}/index.html"
+  else
+    IndexFile.new dir, ''
   end
+end
 
-  protected
-  def write_files
-    @files.each do |f|
-      f.write
+def build_file path
+  case File.extname path
+  when /md/
+    MarkdownFile.new path
+  when /phtml/
+    PartialHtmlFile.new path
+  when /link/
+    LinkFile.new path
+  else
+    HtmlFile.new path
+  end
+end
+
+def build_entry path
+  if File.directory? path
+    SGDir.new path
+  else
+    if File.basename(path).include? 'index'
+      build_index_file path
+    else
+      build_file path
     end
   end
 end
 
-class IndexDir < SGDir
-end
+class IndexFile
+  def initialize dir, file_type
+    @dir = dir
+    @path = "#{dir.path}/index.#{file_type}"
+    @output_path = "#{dir.output_path}/index.html"
+  end
 
-class SGFile
-  attr_accessor :path
-  def initialize path
-    @path = Pathname.new path
+  def write
+    File.write @output_path, merge_index_template(@dir.title, body, @dir.posts)
+  end
+
+  def body
+    ''
   end
 end
 
-class ImageFile < SGFile
+class IndexMarkdownFile < IndexFile
+  def initialize dir
+    super dir, 'md'
+  end
+
+  def body
+    Kramdown::Document.new(File.read path).to_html
+  end
+end
+
+class IndexPartialHtmlFile < IndexFile
+  def initialize dir
+    super dir, 'phtml'
+  end
+
+  def body
+    File.read @path
+  end
+end
+
+class SGDir
+  attr_accessor :path, :output_path, :posts, :title, :id, :link
+  def initialize path
+    @path = path
+    @output_path = path.sub $INPUT_DIR, $OUTPUT_DIR
+    @image_dir = build_image_dir path
+    @index_file = build_index_file self
+    @posts = get_posts path
+    @title = File.basename(path).gsub('_', ' ').split.map(&:capitalize).join ' '
+    @id = @title.gsub(' ', '-')
+    @link = File.basename path
+  end
+
   def write
-    copy_to_dest path
-    system "sips -s format jpeg -Z 320 #{path} --out #{path.dirname.sub($INPUT_DIR, $OUTPUT_DIR)}/#{path.basename '.*'}_320.jpg"
+    FileUtils.mkdir_p @output_path
+    @image_dir.write
+    @index_file.write
+    @posts.each do |e|
+      e.write
+    end
+  end
+
+  private
+  def get_posts path
+    Dir
+      .entries(path)
+      .filter { |e| !e.start_with?('.') and !e.include?('index.') }
+      .map { |e| build_entry "#{path}/#{e}" }
+  end
+end
+
+class ImageDir
+  def initialize path
+    @directories = []
+    @files = []
+    Find.find(path) do |f|
+      if File.directory? f
+        @directories.push f.sub($INPUT_DIR, $OUTPUT_DIR)
+      else
+        @files.push f
+      end
+    end
+  end
+
+  def write
+    @directories.each do |d|
+      FileUtils.mkdir_p d
+    end
+
+    @files.each do |f|
+      out_path = File.dirname f.sub($INPUT_DIR, $OUTPUT_DIR)
+      file_name = File.basename f, '.*'
+      copy_to_dest f
+      system "sips -s format jpeg -Z 320 #{f} --out #{out_path}/#{file_name}_320.jpg"
+    end
+  end
+end
+
+class SGFile
+  attr_accessor :path, :out_path, :link
+  def initialize path
+    @path = Pathname.new path
+    @out_path = @path.dirname.sub($INPUT_DIR, $OUTPUT_DIR)
+    @link = File.basename path
+  end
+
+  def basename
+    @out_path.basename
+  end
+
+  def id
+    title.gsub(' ', '-')
   end
 
   def title
@@ -71,7 +197,7 @@ end
 
 class MarkdownFile < SGFile
   def write
-    write_as_html_file path, merge_template('post', Kramdown::Document.new(path.read).to_html)
+    write_as_html_file path, merge_post_template(title, Kramdown::Document.new(path.read).to_html)
   end
 
   def title
@@ -89,8 +215,7 @@ class HtmlFile < SGFile
   end
 
   def title
-    path
-      .readlines
+    File.readlines(path.to_s)
       .map(&:chomp)
       .find { |l| l.match /h1/ }
       .sub('<h1>', '')
@@ -100,49 +225,50 @@ end
 
 class PartialHtmlFile < HtmlFile
   def write
-    write_as_html_file path, merge_template('post', path.read)
+    write_as_html_file path, merge_post_template(title, path.read)
   end
 end
 
-def build_file path
-  case File.extname path
-  when /jpg|jpeg|png/
-    ImageFile.new path
-  when /md/
-    MarkdownFile.new path
-  when /phtml/
-    PartialHtmlFile.new path
-  else
-    HtmlFile.new path
+class LinkFile
+  def initialize path
+    @config = Hash[
+      File.readlines(path)
+        .map(&:chomp)
+        .map { |l| l.split(',') }
+    ]
+  end
+
+  def write
+  end
+
+  def id
+    title.gsub(' ', '-')
+  end
+
+  def title
+    "#{@config['title']} [external link]"
+  end
+
+  def link
+    @config['link']
   end
 end
 
-$TEMPLATE_DIR = 'templates'# ARGV[0]
 $INPUT_DIR = 'test'# ARGV[1]
 $OUTPUT_DIR = 'www'# ARGV[2]
 
-$TEMPLATES = {}
-
-Find.find($TEMPLATE_DIR) do |f|
-  f = Pathname.new f
-  if f.file? and f.extname == '.html'
-    $TEMPLATES[(f.basename.sub_ext '').to_s] = f.read
-  end
-end
-
-directories = {}
-files = []
-Find.find($INPUT_DIR) do |f|
-  if File.directory? f
-    directories[f] = SGDir.new f
-  else
-    files.push f
-  end
-end
-puts directories
-
-files.each { |f| directories[File.dirname(f)].add_file(build_file f) }
-
-directories.each do |k, v|
-  v.write
-end
+SGDir.new('test').write
+#directories = {}
+#files = []
+#Find.find($INPUT_DIR) do |f|
+#  if File.directory? f
+#    directories[f] = SGDir.new f
+#  end
+#  files.push f
+#end
+#
+#files.each { |f| directories[File.dirname(f)].add_file(build_entry f) }
+#
+#directories.each do |k, v|
+#  v.write
+#end

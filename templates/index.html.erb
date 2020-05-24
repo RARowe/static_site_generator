@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Andrew Rowe - <%= title %></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/homepage/styles.css">
+  </head>
+  <body>
+    <%= title %>
+    <%= body %>
+    <% posts.each do |p| %>
+      <h2 id="<%= p.id %>"><a href="<%= p.link %>"><%= p.title %></a></h2>
+    <% end %>
+  </body>
+</html>
