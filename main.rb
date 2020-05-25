@@ -286,7 +286,7 @@ class LinkFile
   end
 end
 
-$INPUT_DIR = 'test'# ARGV[1]
+$INPUT_DIR = '../homepage'# ARGV[1]
 $OUTPUT_DIR = 'www'# ARGV[2]
 
-SGDir.new('test').write
+SGDir.new($INPUT_DIR).write
